@@ -40,6 +40,7 @@ export function FileBrowser() {
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [shareFile, setShareFile] = useState<{ key: string; name: string } | null>(null)
   const [uploadLinkDialogOpen, setUploadLinkDialogOpen] = useState(false)
+  const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set())
 
   const loadObjects = async () => {
     const credentials = getStoredCredentials()
@@ -101,25 +102,69 @@ export function FileBrowser() {
     }
   }
 
-  const handleDownload = async (key: string) => {
+  const downloadFile = async (url: string, filename: string) => {
     try {
-      const url = await s3Operations.getDownloadUrl(key)
+      // Fetch the file as a blob
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const blob = await response.blob()
+
+      // Create a temporary URL for the blob
+      const blobUrl = window.URL.createObjectURL(blob)
+
+      // Create a temporary anchor element and trigger download
       const link = document.createElement("a")
-      link.href = url
-      link.download = key.split("/").pop() || key
+      link.href = blobUrl
+      link.download = filename
+      link.style.display = "none"
+
+      // Add to DOM, click, and remove
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
 
-      toast({
-        title: "Success",
-        description: "File download started.",
-      })
+      // Clean up the blob URL
+      window.URL.revokeObjectURL(blobUrl)
+
+      return true
     } catch (error) {
+      console.error("Download failed:", error)
+      return false
+    }
+  }
+
+  const handleDownload = async (key: string) => {
+    const filename = key.split("/").pop() || key
+
+    setDownloadingFiles((prev) => new Set(prev).add(key))
+
+    try {
+      const url = await s3Operations.getDownloadUrl(key)
+      const success = await downloadFile(url, filename)
+
+      if (success) {
+        toast({
+          title: "Success",
+          description: `${filename} downloaded successfully.`,
+        })
+      } else {
+        throw new Error("Download failed")
+      }
+    } catch (error) {
+      console.error("Download error:", error)
       toast({
         title: "Error",
-        description: "Failed to download file.",
+        description: `Failed to download ${filename}.`,
         variant: "destructive",
+      })
+    } finally {
+      setDownloadingFiles((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(key)
+        return newSet
       })
     }
   }
@@ -142,9 +187,42 @@ export function FileBrowser() {
   }
 
   const handleBulkDownload = async () => {
-    for (const key of selectedItems) {
-      await handleDownload(key)
+    const filesToDownload = Array.from(selectedItems)
+    let successCount = 0
+    let failCount = 0
+
+    toast({
+      title: "Download Started",
+      description: `Starting download of ${filesToDownload.length} files...`,
+    })
+
+    // Download files sequentially with a small delay to avoid overwhelming the browser
+    for (const key of filesToDownload) {
+      try {
+        await handleDownload(key)
+        successCount++
+        // Small delay between downloads
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      } catch (error) {
+        failCount++
+        console.error(`Failed to download ${key}:`, error)
+      }
     }
+
+    // Show final result
+    if (failCount === 0) {
+      toast({
+        title: "Download Complete",
+        description: `Successfully downloaded ${successCount} files.`,
+      })
+    } else {
+      toast({
+        title: "Download Completed with Errors",
+        description: `Downloaded ${successCount} files successfully, ${failCount} failed.`,
+        variant: "destructive",
+      })
+    }
+
     setSelectedItems(new Set())
   }
 
@@ -305,9 +383,12 @@ export function FileBrowser() {
                     <DropdownMenuContent align="end">
                       {obj.type === "file" && (
                         <>
-                          <DropdownMenuItem onClick={() => handleDownload(obj.key)}>
+                          <DropdownMenuItem
+                            onClick={() => handleDownload(obj.key)}
+                            disabled={downloadingFiles.has(obj.key)}
+                          >
                             <Download className="w-4 h-4 mr-2" />
-                            Download
+                            {downloadingFiles.has(obj.key) ? "Downloading..." : "Download"}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleShare(obj.key, obj.name)}>
                             <Share className="w-4 h-4 mr-2" />
