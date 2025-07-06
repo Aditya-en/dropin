@@ -29,8 +29,8 @@ interface CreateUploadLinkOptions {
 
 class S3Operations {
   private getClient() {
-    const credentials = getStoredCredentials();
-    if (!credentials) throw new Error("…");
+    const credentials = getStoredCredentials()
+    if (!credentials) throw new Error("AWS credentials not configured")
 
     return new S3Client({
       region: credentials.region,
@@ -38,8 +38,8 @@ class S3Operations {
         accessKeyId: credentials.accessKeyId,
         secretAccessKey: credentials.secretAccessKey,
       },
-      requestChecksumCalculation: "WHEN_REQUIRED"
-    });
+      requestChecksumCalculation: "WHEN_REQUIRED",
+    })
   }
 
   private getBucketName() {
@@ -118,14 +118,50 @@ class S3Operations {
     })
   }
 
+  async listAllObjectsInFolder(prefix: string): Promise<S3Object[]> {
+    const client = this.getClient()
+    const bucketName = this.getBucketName()
+    const objects: S3Object[] = []
+    let continuationToken: string | undefined
+
+    do {
+      const command = new ListObjectsV2Command({
+        Bucket: bucketName,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+        MaxKeys: 1000, // Maximum allowed by S3
+      })
+
+      const response = await client.send(command)
+
+      if (response.Contents) {
+        for (const content of response.Contents) {
+          if (content.Key && content.Key !== prefix) {
+            objects.push({
+              key: content.Key,
+              name: content.Key.split("/").pop() || content.Key,
+              type: content.Key.endsWith("/") ? "folder" : "file",
+              size: content.Size,
+              lastModified: content.LastModified,
+            })
+          }
+        }
+      }
+
+      continuationToken = response.NextContinuationToken
+    } while (continuationToken)
+
+    return objects
+  }
+
   async uploadFile(key: string, file: File): Promise<void> {
     if (!file) {
-      console.error("Upload function called with invalid file object.");
-      throw new Error("Invalid file object provided for upload.");
+      console.error("Upload function called with invalid file object.")
+      throw new Error("Invalid file object provided for upload.")
     }
     if (!key) {
-        console.error("Upload function called with invalid key.");
-        throw new Error("Invalid key provided for upload.");
+      console.error("Upload function called with invalid key.")
+      throw new Error("Invalid key provided for upload.")
     }
 
     const client = this.getClient()
@@ -135,16 +171,16 @@ class S3Operations {
       Bucket: bucketName,
       Key: key,
       Body: file,
-      ContentType: file.type || 'application/octet-stream',
+      ContentType: file.type || "application/octet-stream",
       ContentLength: file.size,
     })
 
     try {
-        await client.send(command);
-        console.log("Upload successful for key:", key);
+      await client.send(command)
+      console.log("Upload successful for key:", key)
     } catch (error) {
-        console.error("Direct upload failed. AWS SDK Error:", error);
-        throw error;
+      console.error("Direct upload failed. AWS SDK Error:", error)
+      throw error
     }
   }
 

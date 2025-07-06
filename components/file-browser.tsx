@@ -17,6 +17,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ThemeToggle } from "./theme-toggle"
 import { ShareDialog } from "./share-dialog"
 import { CreateUploadLinkDialog } from "./create-upload-link-dialog"
+import { FileOperations } from "@/lib/file-operations"
+import { ToastUtils } from "@/lib/toast-utils"
 
 interface S3Object {
   key: string
@@ -35,21 +37,17 @@ export function FileBrowser() {
   const [loading, setLoading] = useState(false)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [folderDialogOpen, setFolderDialogOpen] = useState(false)
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const { toast } = useToast()
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [shareFile, setShareFile] = useState<{ key: string; name: string } | null>(null)
   const [uploadLinkDialogOpen, setUploadLinkDialogOpen] = useState(false)
   const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set())
+  const [deletingItems, setDeletingItems] = useState<Set<string>>(new Set())
 
   const loadObjects = async () => {
     const credentials = getStoredCredentials()
     if (!credentials) {
-      toast({
-        title: "Configuration Required",
-        description: "Please configure your AWS credentials in settings.",
-        variant: "destructive",
-      })
+      ToastUtils.showConfigurationRequired()
       return
     }
 
@@ -59,11 +57,7 @@ export function FileBrowser() {
       setObjects(result)
       setFilteredObjects(result)
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to load files and folders.",
-        variant: "destructive",
-      })
+      ToastUtils.showLoadError()
     } finally {
       setLoading(false)
     }
@@ -102,64 +96,22 @@ export function FileBrowser() {
     }
   }
 
-  const downloadFile = async (url: string, filename: string) => {
-    try {
-      // Fetch the file as a blob
-      const response = await fetch(url)
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const blob = await response.blob()
-
-      // Create a temporary URL for the blob
-      const blobUrl = window.URL.createObjectURL(blob)
-
-      // Create a temporary anchor element and trigger download
-      const link = document.createElement("a")
-      link.href = blobUrl
-      link.download = filename
-      link.style.display = "none"
-
-      // Add to DOM, click, and remove
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-
-      // Clean up the blob URL
-      window.URL.revokeObjectURL(blobUrl)
-
-      return true
-    } catch (error) {
-      console.error("Download failed:", error)
-      return false
-    }
-  }
-
   const handleDownload = async (key: string) => {
     const filename = key.split("/").pop() || key
 
     setDownloadingFiles((prev) => new Set(prev).add(key))
 
     try {
-      const url = await s3Operations.getDownloadUrl(key)
-      const success = await downloadFile(url, filename)
+      const result = await FileOperations.downloadSingleFile(key)
 
-      if (success) {
-        toast({
-          title: "Success",
-          description: `${filename} downloaded successfully.`,
-        })
+      if (result.success) {
+        ToastUtils.showDownloadSuccess(filename)
       } else {
-        throw new Error("Download failed")
+        ToastUtils.showDownloadError(filename)
       }
     } catch (error) {
       console.error("Download error:", error)
-      toast({
-        title: "Error",
-        description: `Failed to download ${filename}.`,
-        variant: "destructive",
-      })
+      ToastUtils.showDownloadError(filename)
     } finally {
       setDownloadingFiles((prev) => {
         const newSet = new Set(prev)
@@ -169,58 +121,69 @@ export function FileBrowser() {
     }
   }
 
-  const handleDelete = async (key: string) => {
+  const handleDelete = async (key: string, type: "file" | "folder") => {
+    const itemName = key.split("/").pop() || key
+
+    setDeletingItems((prev) => new Set(prev).add(key))
+
     try {
-      await s3Operations.deleteObject(key)
-      toast({
-        title: "Success",
-        description: "Item deleted successfully.",
-      })
-      loadObjects()
+      const result = await FileOperations.deleteSingleItem(key, type === "folder")
+
+      if (result.success) {
+        ToastUtils.showDeleteSuccess(itemName)
+        loadObjects() // Refresh the list
+      } else {
+        ToastUtils.showDeleteError(itemName)
+      }
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to delete item.",
-        variant: "destructive",
+      console.error("Delete error:", error)
+      ToastUtils.showDeleteError(itemName)
+    } finally {
+      setDeletingItems((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(key)
+        return newSet
       })
     }
   }
 
   const handleBulkDownload = async () => {
     const filesToDownload = Array.from(selectedItems)
-    let successCount = 0
-    let failCount = 0
 
-    toast({
-      title: "Download Started",
-      description: `Starting download of ${filesToDownload.length} files...`,
-    })
+    ToastUtils.showBulkDownloadStart(filesToDownload.length)
 
-    // Download files sequentially with a small delay to avoid overwhelming the browser
-    for (const key of filesToDownload) {
-      try {
-        await handleDownload(key)
-        successCount++
-        // Small delay between downloads
-        await new Promise((resolve) => setTimeout(resolve, 500))
-      } catch (error) {
-        failCount++
-        console.error(`Failed to download ${key}:`, error)
-      }
+    try {
+      const { successCount, failCount } = await FileOperations.downloadMultipleFiles(filesToDownload)
+      ToastUtils.showBulkDownloadComplete(successCount, failCount)
+    } catch (error) {
+      console.error("Bulk download error:", error)
+      ToastUtils.showBulkDownloadComplete(0, filesToDownload.length)
     }
 
-    // Show final result
-    if (failCount === 0) {
-      toast({
-        title: "Download Complete",
-        description: `Successfully downloaded ${successCount} files.`,
-      })
-    } else {
-      toast({
-        title: "Download Completed with Errors",
-        description: `Downloaded ${successCount} files successfully, ${failCount} failed.`,
-        variant: "destructive",
-      })
+    setSelectedItems(new Set())
+  }
+
+  const handleBulkDelete = async () => {
+    const itemsToDelete = Array.from(selectedItems).map((key) => {
+      const obj = objects.find((o) => o.key === key)
+      return {
+        key,
+        type: obj?.type || ("file" as "file" | "folder"),
+      }
+    })
+
+    ToastUtils.showBulkDeleteStart(itemsToDelete.length)
+
+    try {
+      const { successCount, failCount } = await FileOperations.deleteMultipleItems(itemsToDelete)
+      ToastUtils.showBulkDeleteComplete(successCount, failCount)
+
+      if (successCount > 0) {
+        loadObjects() // Refresh the list
+      }
+    } catch (error) {
+      console.error("Bulk delete error:", error)
+      ToastUtils.showBulkDeleteComplete(0, itemsToDelete.length)
     }
 
     setSelectedItems(new Set())
@@ -231,11 +194,7 @@ export function FileBrowser() {
   const handleUploadClick = () => {
     const credentials = getStoredCredentials()
     if (!credentials) {
-      toast({
-        title: "Configuration Required",
-        description: "Please configure your AWS credentials in settings first.",
-        variant: "destructive",
-      })
+      ToastUtils.showConfigurationRequired()
       return
     }
     setUploadDialogOpen(true)
@@ -244,11 +203,7 @@ export function FileBrowser() {
   const handleCreateFolderClick = () => {
     const credentials = getStoredCredentials()
     if (!credentials) {
-      toast({
-        title: "Configuration Required",
-        description: "Please configure your AWS credentials in settings first.",
-        variant: "destructive",
-      })
+      ToastUtils.showConfigurationRequired()
       return
     }
     setFolderDialogOpen(true)
@@ -299,10 +254,20 @@ export function FileBrowser() {
             Create Upload Link
           </Button>
           {selectedItems.size > 0 && (
-            <Button variant="outline" onClick={handleBulkDownload}>
-              <Download className="w-4 h-4 mr-2" />
-              Download ({selectedItems.size})
-            </Button>
+            <>
+              <Button variant="outline" onClick={handleBulkDownload}>
+                <Download className="w-4 h-4 mr-2" />
+                Download ({selectedItems.size})
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleBulkDelete}
+                className="text-destructive hover:text-destructive bg-transparent"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete ({selectedItems.size})
+              </Button>
+            </>
           )}
         </div>
 
@@ -396,9 +361,13 @@ export function FileBrowser() {
                           </DropdownMenuItem>
                         </>
                       )}
-                      <DropdownMenuItem onClick={() => handleDelete(obj.key)} className="text-destructive">
+                      <DropdownMenuItem
+                        onClick={() => handleDelete(obj.key, obj.type)}
+                        className="text-destructive"
+                        disabled={deletingItems.has(obj.key)}
+                      >
                         <Trash2 className="w-4 h-4 mr-2" />
-                        Delete
+                        {deletingItems.has(obj.key) ? "Deleting..." : "Delete"}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
