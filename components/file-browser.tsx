@@ -215,21 +215,21 @@ export function FileBrowser() {
   }
 
   return (
-    <div className="container mx-auto py-8 px-4">
+    <div className="container mx-auto py-4 px-4 max-w-full">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+        <div className="flex-shrink-0">
+          <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
             DropIN
           </h1>
-          <p className="text-muted-foreground">Manage your files and folders</p>
+          <p className="text-muted-foreground text-sm sm:text-base">Manage your files and folders</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <ThemeToggle />
           <Link href="/settings">
             <Button variant="outline" size="sm">
               <Settings className="w-4 h-4 mr-2" />
-              Settings
+              <span className="hidden sm:inline">Settings</span>
             </Button>
           </Link>
         </div>
@@ -238,54 +238,80 @@ export function FileBrowser() {
       {/* Breadcrumb */}
       <BreadcrumbNav segments={pathSegments} onNavigate={setCurrentPath} className="mb-6" />
 
+      {/* Search Bar - Mobile First */}
+      <div className="mb-4 sm:hidden">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+          <Input
+            placeholder="Search files..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 w-full"
+          />
+        </div>
+      </div>
+
       {/* Actions Bar */}
-      <div className="flex items-center justify-between mb-6 gap-4">
-        <div className="flex items-center gap-2">
-          <Button onClick={handleUploadClick}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+        {/* Primary Actions */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={handleUploadClick} size="sm" className="flex-shrink-0">
             <Upload className="w-4 h-4 mr-2" />
-            Upload Files
+            <span className="hidden xs:inline">Upload</span>
           </Button>
-          <Button variant="outline" onClick={handleCreateFolderClick}>
+          <Button
+            variant="outline"
+            onClick={handleCreateFolderClick}
+            size="sm"
+            className="flex-shrink-0 bg-transparent"
+          >
             <FolderPlus className="w-4 h-4 mr-2" />
-            New Folder
+            <span className="hidden xs:inline">Folder</span>
           </Button>
-          <Button variant="outline" onClick={() => setUploadLinkDialogOpen(true)}>
+          <Button variant="outline" onClick={() => setUploadLinkDialogOpen(true)} size="sm" className="flex-shrink-0">
             <Share className="w-4 h-4 mr-2" />
-            Create Upload Link
+            <span className="hidden xs:inline">Upload Link</span>
           </Button>
+        </div>
+
+        {/* Bulk Actions & Search */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+          {/* Bulk Actions */}
           {selectedItems.size > 0 && (
-            <>
-              <Button variant="outline" onClick={handleBulkDownload}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="outline" onClick={handleBulkDownload} size="sm" className="flex-shrink-0 bg-transparent">
                 <Download className="w-4 h-4 mr-2" />
                 Download ({selectedItems.size})
               </Button>
               <Button
                 variant="outline"
                 onClick={handleBulkDelete}
-                className="text-destructive hover:text-destructive bg-transparent"
+                size="sm"
+                className="text-destructive hover:text-destructive bg-transparent flex-shrink-0"
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete ({selectedItems.size})
               </Button>
-            </>
+            </div>
           )}
-        </div>
 
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-            <Input
-              placeholder="Search files and folders..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 w-64"
-            />
+          {/* Search - Desktop */}
+          <div className="hidden sm:block">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Input
+                placeholder="Search files and folders..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 w-64"
+              />
+            </div>
           </div>
         </div>
       </div>
 
       {/* File List */}
-      <Card className="p-6">
+      <Card className="p-3 sm:p-6 overflow-hidden">
         {loading ? (
           <div className="text-center py-8">
             <p className="text-muted-foreground">Loading...</p>
@@ -298,8 +324,8 @@ export function FileBrowser() {
           </div>
         ) : (
           <div className="space-y-2">
-            {/* Header */}
-            <div className="flex items-center gap-4 pb-2 border-b text-sm font-medium text-muted-foreground">
+            {/* Header - Desktop Only */}
+            <div className="hidden sm:flex items-center gap-4 pb-2 border-b text-sm font-medium text-muted-foreground">
               <div className="flex items-center gap-2">
                 <Checkbox checked={selectedItems.size === filteredObjects.length} onCheckedChange={handleSelectAll} />
                 <span>Name</span>
@@ -313,8 +339,71 @@ export function FileBrowser() {
 
             {/* Items */}
             {filteredObjects.map((obj) => (
-              <div key={obj.key} className="flex items-center gap-4 py-3 hover:bg-muted/50 rounded-lg px-2 group">
-                <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div
+                key={obj.key}
+                className="flex items-center gap-2 sm:gap-4 py-3 hover:bg-muted/50 rounded-lg px-2 group"
+              >
+                {/* Mobile Layout */}
+                <div className="flex items-center gap-3 flex-1 min-w-0 sm:hidden">
+                  <Checkbox
+                    checked={selectedItems.has(obj.key)}
+                    onCheckedChange={(checked) => handleItemSelect(obj.key, checked as boolean)}
+                  />
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {obj.type === "folder" ? (
+                      <Folder className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                    ) : (
+                      <File className="w-5 h-5 text-gray-500 flex-shrink-0" />
+                    )}
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span
+                        className={`truncate text-sm ${obj.type === "folder" ? "cursor-pointer hover:underline" : ""}`}
+                        onClick={() => obj.type === "folder" && handleFolderClick(obj.name)}
+                      >
+                        {obj.name}
+                      </span>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {obj.size && <span>{(obj.size / 1024).toFixed(1)} KB</span>}
+                        {obj.lastModified && <span>{obj.lastModified.toLocaleDateString()}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="w-8 h-8 p-0">
+                        <MoreVertical className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {obj.type === "file" && (
+                        <>
+                          <DropdownMenuItem
+                            onClick={() => handleDownload(obj.key)}
+                            disabled={downloadingFiles.has(obj.key)}
+                          >
+                            <Download className="w-4 h-4 mr-2" />
+                            {downloadingFiles.has(obj.key) ? "Downloading..." : "Download"}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleShare(obj.key, obj.name)}>
+                            <Share className="w-4 h-4 mr-2" />
+                            Share
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      <DropdownMenuItem
+                        onClick={() => handleDelete(obj.key, obj.type)}
+                        className="text-destructive"
+                        disabled={deletingItems.has(obj.key)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        {deletingItems.has(obj.key) ? "Deleting..." : "Delete"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {/* Desktop Layout */}
+                <div className="hidden sm:flex items-center gap-3 flex-1 min-w-0">
                   <Checkbox
                     checked={selectedItems.has(obj.key)}
                     onCheckedChange={(checked) => handleItemSelect(obj.key, checked as boolean)}
@@ -334,7 +423,7 @@ export function FileBrowser() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-8 text-sm text-muted-foreground">
+                <div className="hidden sm:flex items-center gap-8 text-sm text-muted-foreground">
                   <span className="w-16 text-right">{obj.size ? `${(obj.size / 1024).toFixed(1)} KB` : "-"}</span>
                   <span className="w-24 text-right">
                     {obj.lastModified ? obj.lastModified.toLocaleDateString() : "-"}
