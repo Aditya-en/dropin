@@ -29,10 +29,8 @@ interface CreateUploadLinkOptions {
 
 class S3Operations {
   private getClient() {
-    const credentials = getStoredCredentials()
-    if (!credentials) {
-      throw new Error("AWS credentials not configured")
-    }
+    const credentials = getStoredCredentials();
+    if (!credentials) throw new Error("…");
 
     return new S3Client({
       region: credentials.region,
@@ -40,7 +38,8 @@ class S3Operations {
         accessKeyId: credentials.accessKeyId,
         secretAccessKey: credentials.secretAccessKey,
       },
-    })
+      requestChecksumCalculation: "WHEN_REQUIRED"
+    });
   }
 
   private getBucketName() {
@@ -120,6 +119,15 @@ class S3Operations {
   }
 
   async uploadFile(key: string, file: File): Promise<void> {
+    if (!file) {
+      console.error("Upload function called with invalid file object.");
+      throw new Error("Invalid file object provided for upload.");
+    }
+    if (!key) {
+        console.error("Upload function called with invalid key.");
+        throw new Error("Invalid key provided for upload.");
+    }
+
     const client = this.getClient()
     const bucketName = this.getBucketName()
 
@@ -127,10 +135,17 @@ class S3Operations {
       Bucket: bucketName,
       Key: key,
       Body: file,
-      ContentType: file.type,
+      ContentType: file.type || 'application/octet-stream',
+      ContentLength: file.size,
     })
 
-    await client.send(command)
+    try {
+        await client.send(command);
+        console.log("Upload successful for key:", key);
+    } catch (error) {
+        console.error("Direct upload failed. AWS SDK Error:", error);
+        throw error;
+    }
   }
 
   async createFolder(key: string): Promise<void> {
