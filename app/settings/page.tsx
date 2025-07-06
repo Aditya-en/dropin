@@ -6,7 +6,7 @@ import Link from "next/link"
 export default function SettingsPage() {
   return (
     <div className="min-h-screen bg-background">
-      <div className="container mx-auto py-8 px-4">
+      <div className="container mx-auto py-8 px-4 max-w-4xl">
         <div className="mb-6">
           <Link href="/">
             <Button variant="ghost" className="mb-4">
